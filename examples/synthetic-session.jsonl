@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"SGVsbG8="}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"SGVsbG8="}}]}]}}
