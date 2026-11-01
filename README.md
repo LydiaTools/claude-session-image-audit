@@ -19,6 +19,26 @@ Claude Code users have reported that screenshots returned by tools can take up a
 
 The byte counts describe stored transcript data. They are not token counts, billed usage, or a guarantee that a provider resends every image on every turn.
 
+## Check image block structure
+
+If a session reports an image-related error, add `--check-images` to count
+base64 image blocks with missing data, invalid base64, missing or unsupported
+media types, or a signature that does not match the declared PNG, JPEG, GIF or
+WebP type. Findings are counted per session and in the total; the data itself
+is never printed. Checks decode in bounded chunks and do not modify the file.
+
+```bash
+claude-session-image-audit /path/to/session.jsonl --check-images
+claude-session-image-audit /path/to/session.jsonl --check-images --format json
+```
+
+This is a basic structural check, not a full image decode or an API request.
+A clean result does not prove an image is complete or that a provider will
+accept it. The check covers `image` blocks with a `base64` source, not raw
+strings or other image formats. It cannot determine the cause of an API error
+or repair a session. The synthetic demo's tiny strings are not actual image
+files, so their signatures are expected to be flagged.
+
 ## Quick start
 
 Requires Python 3.10 or later. There are no runtime dependencies.
@@ -84,6 +104,18 @@ claude-session-image-audit /path/to/session.jsonl --lang zh --format json
 - JSONL 格式错误行数
 
 这些数字描述会话文件里的数据大小，不等于 token 数、账单费用，也不证明模型每轮都重新接收了同一张图片。
+
+### 检查图片块结构
+
+如果会话出现图片相关错误，可添加 `--check-images`：
+
+```bash
+claude-session-image-audit /path/to/session.jsonl --lang zh --check-images
+```
+
+它会统计缺少数据、Base64 格式异常、媒体类型缺失或不支持，以及文件标识与 PNG、JPEG、GIF、WebP 声明不一致的图片块。检查按分块处理，不显示图片内容，也不修改文件。
+
+这只是基础结构检查，不会完整解码图片、发送 API 请求或修复会话；没有发现异常也不代表图片完整或一定能被服务商接受。检查范围是来源类型为 `base64` 的 `image` 块，不覆盖普通字符串或其他图片格式。自带示例是虚构短字符串，并非真实图片，文件标识出现提示属于预期。
 
 ## Background
 
