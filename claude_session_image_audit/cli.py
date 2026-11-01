@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import sys
@@ -10,7 +12,7 @@ from typing import Any, Iterator
 DEFAULT_ROOT = Path.home() / ".claude" / "projects"
 
 
-def _image_blocks(value: Any, in_tool_result: bool = False) -> Iterator[tuple[str, str, bool]]:
+def _image_blocks(value: Any, in_tool_result: bool = False) -> Iterator[tuple[Any, Any, bool]]:
     """Yield (base64 data, media type, came from tool_result) for image blocks."""
     if isinstance(value, list):
         for item in value:
@@ -26,9 +28,8 @@ def _image_blocks(value: Any, in_tool_result: bool = False) -> Iterator[tuple[st
         if (
             isinstance(source, dict)
             and source.get("type") == "base64"
-            and isinstance(source.get("data"), str)
         ):
-            yield source["data"], str(source.get("media_type", "unknown")), inside_tool_result
+            yield source.get("data"), source.get("media_type"), inside_tool_result
 
     for child in value.values():
         yield from _image_blocks(child, inside_tool_result)
@@ -40,7 +41,45 @@ def _decoded_size_estimate(data: str) -> int:
     return max(0, (len(compact) * 3 // 4) - padding)
 
 
-def _scan_file(path: Path, display_path: str) -> dict[str, Any]:
+def _inspect_image(data: Any, media_type: Any) -> set[str]:
+    """Check basic block structure without retaining or printing image contents.
+
+    This is not an image decoder or a provider request validator.
+    """
+    problems: set[str] = set()
+    supported = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+    if not isinstance(media_type, str) or media_type not in supported:
+        problems.add("media_type")
+    if not isinstance(data, str) or not data:
+        problems.add("missing_data")
+        return problems
+
+    # Decode bounded chunks: avoid allocating a second full-size image buffer.
+    prefix = bytearray()
+    try:
+        for start in range(0, len(data), 65536):
+            chunk = data[start:start + 65536]
+            if start + len(chunk) < len(data) and "=" in chunk:
+                raise ValueError("padding before end")
+            decoded = base64.b64decode(chunk, validate=True)
+            if len(prefix) < 12:
+                prefix.extend(decoded[:12 - len(prefix)])
+    except (ValueError, binascii.Error):
+        problems.add("invalid_base64")
+        return problems
+
+    signatures = {
+        "image/png": prefix.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg": prefix.startswith(b"\xff\xd8\xff"),
+        "image/gif": prefix.startswith((b"GIF87a", b"GIF89a")),
+        "image/webp": prefix.startswith(b"RIFF") and prefix[8:12] == b"WEBP",
+    }
+    if isinstance(media_type, str) and media_type in supported and not signatures[media_type]:
+        problems.add("signature_mismatch")
+    return problems
+
+
+def _scan_file(path: Path, display_path: str, check_images: bool = False) -> dict[str, Any]:
     session: dict[str, Any] = {
         "file": display_path,
         "file_bytes": path.stat().st_size,
@@ -54,6 +93,11 @@ def _scan_file(path: Path, display_path: str) -> dict[str, Any]:
         "duplicate_image_blocks": 0,
         "duplicate_base64_bytes": 0,
     }
+    if check_images:
+        session["image_checks"] = {key: 0 for key in (
+            "blocks_checked", "blocks_with_findings", "missing_data",
+            "invalid_base64", "media_type", "signature_mismatch",
+        )}
     seen_payloads: set[bytes] = set()
 
     with path.open("r", encoding="utf-8", errors="replace") as stream:
@@ -67,7 +111,16 @@ def _scan_file(path: Path, display_path: str) -> dict[str, Any]:
                 continue
 
             session["json_lines"] += 1
-            for data, _media_type, from_tool in _image_blocks(record):
+            for data, media_type, from_tool in _image_blocks(record):
+                if check_images:
+                    findings = _inspect_image(data, media_type)
+                    checks = session["image_checks"]
+                    checks["blocks_checked"] += 1
+                    checks["blocks_with_findings"] += bool(findings)
+                    for finding in findings:
+                        checks[finding] += 1
+                if not isinstance(data, str):
+                    continue
                 encoded_size = len(data.encode("utf-8"))
                 digest = hashlib.sha256(data.encode("utf-8")).digest()
                 session["image_blocks"] += 1
@@ -131,6 +184,24 @@ def _format_size(value: int) -> str:
     return f"{value} B"
 
 
+def _print_image_checks(report: dict[str, Any], lang: str, top: int) -> None:
+    if "image_checks" not in report:
+        return
+    checks = report["image_checks"]
+    if lang == "zh":
+        print("图片结构检查：{blocks_checked} 块，{blocks_with_findings} 块需检查；缺少数据 {missing_data}，Base64 异常 {invalid_base64}，媒体类型异常 {media_type}，文件标识不符 {signature_mismatch}。".format(**checks))
+    else:
+        print("Image checks: {blocks_checked} blocks, {blocks_with_findings} with findings; missing data {missing_data}, invalid base64 {invalid_base64}, media type {media_type}, signature mismatch {signature_mismatch}.".format(**checks))
+    affected = [session for session in report["sessions"] if session["image_checks"]["blocks_with_findings"]]
+    if affected:
+        print("需检查的会话：" if lang == "zh" else "Sessions with findings:")
+        for session in affected[:top]:
+            values = session["image_checks"]
+            print("  {file}: missing_data={missing_data}, invalid_base64={invalid_base64}, media_type={media_type}, signature_mismatch={signature_mismatch}".format(file=session["file"], **values))
+        if len(affected) > top:
+            print(f"  +{len(affected) - top} " + ("个会话未显示；可增大 --top 或使用 JSON。" if lang == "zh" else "more sessions; increase --top or use JSON."))
+
+
 def _print_table(report: dict[str, Any], lang: str, top: int) -> None:
     if lang == "zh":
         print("会话文件                 图片块   工具图片   Base64大小   重复图片   文件大小")
@@ -142,6 +213,7 @@ def _print_table(report: dict[str, Any], lang: str, top: int) -> None:
     sessions = report["sessions"][:top]
     if not sessions or not any(session["image_blocks"] for session in sessions):
         print("未找到内嵌 Base64 图片块。" if lang == "zh" else "No embedded base64 image blocks found.")
+        _print_image_checks(report, lang, top)
         return
 
     for session in sessions:
@@ -179,6 +251,7 @@ def _print_table(report: dict[str, Any], lang: str, top: int) -> None:
             duplicate_bytes=_format_size(total["duplicate_base64_bytes"]),
         ))
         print("Read-only scan; image contents are not shown and session files are not changed.")
+    _print_image_checks(report, lang, top)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--format", choices=("table", "json"), default="table", help="Output format")
     parser.add_argument("--top", type=int, default=25, help="Maximum session rows to show in table output")
     parser.add_argument("--show-paths", action="store_true", help="Show absolute file paths instead of paths relative to the scan root")
+    parser.add_argument("--check-images", action="store_true", help="Check base64, media type and image signatures without printing image content")
     args = parser.parse_args(argv)
 
     if args.top < 1:
@@ -199,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root, files = _collect_files(Path(args.path))
         sessions = [
-            _scan_file(path, _display_path(path, root, args.show_paths))
+            _scan_file(path, _display_path(path, root, args.show_paths), args.check_images)
             for path in files
         ]
     except (OSError, UnicodeError) as exc:
@@ -214,6 +288,9 @@ def main(argv: list[str] | None = None) -> int:
         "totals": _aggregate(sessions),
         "sessions": sessions,
     }
+    if args.check_images:
+        keys = ("blocks_checked", "blocks_with_findings", "missing_data", "invalid_base64", "media_type", "signature_mismatch")
+        report["image_checks"] = {key: sum(session["image_checks"][key] for session in sessions) for key in keys}
 
     if args.format == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))
