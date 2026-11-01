@@ -43,12 +43,14 @@ files, so their signatures are expected to be flagged.
 
 ## Quick start
 
-Requires Python 3.10 or later. There are no runtime dependencies.
+Requires Python 3.10 or later. There are no runtime dependencies. Install the preview directly from GitHub, then check the available options without scanning any files:
 
 ```bash
-python3 -m pip install .
-claude-session-image-audit
+python3 -m pip install https://github.com/LydiaTools/claude-session-image-audit/releases/download/v0.1.0/claude_session_image_audit-0.1.0-py3-none-any.whl
+python3 -m claude_session_image_audit --help
 ```
+
+To run from a cloned source checkout instead, use `python3 -m pip install .` inside that checkout. The commands below use the installed `claude-session-image-audit` entry point; if it is not on your PATH, replace it with `python3 -m claude_session_image_audit`.
 
 By default it scans `~/.claude/projects` recursively. Point it at one session or another directory when needed:
 
@@ -62,10 +64,12 @@ Use `--show-paths` to include absolute local paths in output. The default report
 
 ## Try the synthetic demo
 
-The fixture contains two identical, tiny base64 strings so you can see how tool-result images and repeated payloads are counted. It contains no real screenshot.
+The source fixture contains two identical, tiny base64 strings so you can see how tool-result images and repeated payloads are counted. It contains no real screenshot. The wheel does not include this fixture; to try it, clone the matching release and run:
 
 ```bash
-claude-session-image-audit examples/synthetic-session.jsonl
+git clone --branch v0.1.0 https://github.com/LydiaTools/claude-session-image-audit.git
+cd claude-session-image-audit
+python3 -m claude_session_image_audit examples/synthetic-session.jsonl --check-images
 ```
 
 ## Safety and scope
@@ -85,12 +89,14 @@ claude-session-image-audit examples/synthetic-session.jsonl
 
 ### 快速开始
 
-需要 Python 3.10 或更新版本；运行时不依赖第三方库。
+需要 Python 3.10 或更新版本；运行时不依赖第三方库。可以直接安装 GitHub 预览包，再查看参数；查看帮助不会扫描文件：
 
 ```bash
-python3 -m pip install .
-claude-session-image-audit --lang zh
+python3 -m pip install https://github.com/LydiaTools/claude-session-image-audit/releases/download/v0.1.0/claude_session_image_audit-0.1.0-py3-none-any.whl
+python3 -m claude_session_image_audit --help
 ```
+
+如果使用克隆的源码，请进入源码目录后运行 `python3 -m pip install .`。下面的命令使用安装后的 `claude-session-image-audit`；若该命令不在 PATH 中，可换成 `python3 -m claude_session_image_audit`。
 
 默认递归扫描 `~/.claude/projects`，也可以指定单个会话文件或其他目录：
 
