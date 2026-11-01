@@ -4,6 +4,8 @@
 
 A local, read-only CLI that scans Claude Code JSONL sessions and reports embedded image payload sizes, tool-result images, duplicate payloads, and malformed records. It does not upload, print, delete, or rewrite session content.
 
+**[Download v0.1.0 preview wheel](https://github.com/LydiaTools/claude-session-image-audit/releases/download/v0.1.0/claude_session_image_audit-0.1.0-py3-none-any.whl)** · [Release notes and checksum](https://github.com/LydiaTools/claude-session-image-audit/releases/tag/v0.1.0)
+
 ## Why this exists
 
 Claude Code users have reported that screenshots returned by tools can take up a large share of local session transcripts, while ordinary usage summaries do not show those bytes separately. One public report measured 171.5 MB of base64 image data across 312 sessions; that is one user's sample, not a platform-wide estimate. This tool makes the same kind of local measurement available without sharing a transcript.
@@ -78,6 +80,8 @@ claude-session-image-audit examples/synthetic-session.jsonl
 **找出 Claude Code 会话记录里悄悄累积的截图数据。**
 
 这是一个本地只读命令行工具：扫描 Claude Code 的 JSONL 会话，统计内嵌图片的 Base64 大小、工具返回图片、会话内重复图片，以及格式错误的记录。它不会上传、打印、删除或改写会话内容。
+
+**[下载 v0.1.0 预览安装包](https://github.com/LydiaTools/claude-session-image-audit/releases/download/v0.1.0/claude_session_image_audit-0.1.0-py3-none-any.whl)** · [更新说明与校验值](https://github.com/LydiaTools/claude-session-image-audit/releases/tag/v0.1.0)
 
 ### 快速开始
 
